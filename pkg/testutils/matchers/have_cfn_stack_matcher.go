@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	errorMerssageTemplate = "Stack with id %s does not exist"
+	errorMessageTemplate = "Stack with id %s does not exist"
 )
 
 // HaveCfnStack returns a GoMega matcher that will check for the existence of an cloudformatioin stack

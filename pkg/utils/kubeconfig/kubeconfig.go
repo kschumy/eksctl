@@ -25,7 +25,7 @@ const (
 
 // New creates Kubernetes client configuration for a given username
 // if certificateAuthorityPath is no empty, it is used instead of
-// embdedded certificate-authority-data
+// embedded certificate-authority-data
 func New(spec *api.ClusterConfig, username, certificateAuthorityPath string) (*clientcmdapi.Config, string, string) {
 	clusterName := fmt.Sprintf("%s.%s.eksctl.io", spec.ClusterName, spec.Region)
 	contextName := fmt.Sprintf("%s@%s", username, clusterName)
@@ -103,14 +103,15 @@ func getConfigAccess(explicitPath string) clientcmd.ConfigAccess {
 
 	return interface{}(pathOptions).(clientcmd.ConfigAccess)
 }
-func merge(existing *clientcmdapi.Config, tomerge *clientcmdapi.Config) (*clientcmdapi.Config, error) {
-	for k, v := range tomerge.Clusters {
+
+func merge(existing *clientcmdapi.Config, toMerge *clientcmdapi.Config) (*clientcmdapi.Config, error) {
+	for k, v := range toMerge.Clusters {
 		existing.Clusters[k] = v
 	}
-	for k, v := range tomerge.AuthInfos {
+	for k, v := range toMerge.AuthInfos {
 		existing.AuthInfos[k] = v
 	}
-	for k, v := range tomerge.Contexts {
+	for k, v := range toMerge.Contexts {
 		existing.Contexts[k] = v
 	}
 
