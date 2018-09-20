@@ -55,7 +55,7 @@ func deleteClusterCmd() *cobra.Command {
 
 // TODO: comment
 func deleteClusterAndResources(ctl *eks.ClusterProvider) {
-	// TODO: should I think of a better way to handle this?
+	// TODO: question - should I think of a better way to handle this?
 	var deletedResources []string
 	handleIfError := func(err error, name string) bool {
 		if err != nil {
@@ -69,8 +69,8 @@ func deleteClusterAndResources(ctl *eks.ClusterProvider) {
 
 	stackManager := ctl.NewStackManager()
 
-	// TODO: is the handleIfError(...) thing super ugly? Would it be better to handle this with the
-	// more traditional 'if err := <method>; if err != nil { ... }' thing?
+	// TODO: question - is the handleIfError(...) thing super ugly? Would it be better to handle
+	// this with the more traditional 'if err := <method>; if err != nil { ... }' thing?
 	handleIfError(stackManager.WaitDeleteNodeGroup(), "node group")
 	if handleIfError(stackManager.DeleteCluster(), "cluster") {
 		if handleIfError(ctl.DeprecatedDeleteControlPlane(),"control plane") {
@@ -84,6 +84,7 @@ func deleteClusterAndResources(ctl *eks.ClusterProvider) {
 	if len(deletedResources) == 0 {
 		logger.Warning("No EKS cluster resource were found for %q", ctl.Spec.ClusterName)
 	} else {
+		// BUG: remove quotes around deletedResources
 		logger.Success("The following EKS cluster resource for %q will be deleted (if in doubt, check CloudFormation console): %q", ctl.Spec.ClusterName, strings.Join(deletedResources, ", "))
 	}
 }
@@ -109,13 +110,8 @@ func doDeleteCluster(cfg *api.ClusterConfig, name string) error {
 	}
 
 	deleteClusterAndResources(ctl)
-
 	ctl.MaybeDeletePublicSSHKey()
-
-	kubeconfig.MaybeDeleteConfig(cfg.ClusterName)
-
-	logger.Success("all EKS cluster resource for %q will be deleted (if in doubt, check CloudFormation console)", cfg.ClusterName)
-
+	kubeconfig.MaybeDeleteConfig(cfg)
 	return nil
 }
 

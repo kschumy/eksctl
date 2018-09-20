@@ -27,7 +27,7 @@ const (
 // if certificateAuthorityPath is no empty, it is used instead of
 // embedded certificate-authority-data
 func New(spec *api.ClusterConfig, username, certificateAuthorityPath string) (*clientcmdapi.Config, string, string) {
-	clusterName := fmt.Sprintf("%s.%s.eksctl.io", spec.ClusterName, spec.Region)
+	clusterName := getFormattedClusterName(spec)
 	contextName := fmt.Sprintf("%s@%s", username, clusterName)
 
 	c := &clientcmdapi.Config{
@@ -94,6 +94,9 @@ func Write(path string, newConfig *clientcmdapi.Config, setContext bool) (string
 
 	return configAccess.GetDefaultFilename(), nil
 }
+func getFormattedClusterName(spec *api.ClusterConfig) string {
+	return fmt.Sprintf("%s.%s.eksctl.io", spec.ClusterName, spec.Region)
+}
 
 func getConfigAccess(explicitPath string) clientcmd.ConfigAccess {
 	pathOptions := clientcmd.NewDefaultPathOptions()
@@ -116,6 +119,29 @@ func merge(existing *clientcmdapi.Config, toMerge *clientcmdapi.Config) (*client
 	}
 
 	return existing, nil
+}
+
+// deleteClusterInfo removes the information for the cluster in the provided ctl from the
+// provided existing if existing contains the cluster's information.
+func deleteClusterInfo(existing *clientcmdapi.Config, ctl *api.ClusterConfig) {
+	clusterName := getFormattedClusterName(ctl)
+
+	if existing.Clusters[clusterName] != nil {
+		delete(existing.Clusters, clusterName)
+		logger.Debug("removed cluster %q from kubeconfig", clusterName)
+	}
+
+	for username, context := range existing.Contexts {
+		if context.Cluster == clusterName {
+			delete(existing.Contexts, username)
+			logger.Debug("removed context for %q from kubeconfig", username)
+			if existing.AuthInfos[username] != nil {
+				delete(existing.AuthInfos, username)
+				logger.Debug("removed auth info for %q from kubeconfig", username)
+			}
+			break
+		}
+	}
 }
 
 func AutoPath(name string) string {
@@ -157,8 +183,8 @@ func tryDeleteConfig(p, name string) {
 	}
 }
 
-func MaybeDeleteConfig(name string) {
-	p := AutoPath(name)
+func MaybeDeleteConfig(ctl *api.ClusterConfig) {
+	p := AutoPath(ctl.ClusterName)
 
 	autoConfExists, err := utils.FileExists(p)
 	if err != nil {
@@ -172,6 +198,18 @@ func MaybeDeleteConfig(name string) {
 		return
 	}
 
-	// Print message to manually remove from config file
-	logger.Warning("as you are not using the auto-generated kubeconfig file you will need to remove the details of cluster %s manually", name)
+	deleteFromNonAutoConf(ctl)
+}
+
+// TODO: question - would it be better if this was just left in MaybeDeleteConfig()?
+// TODO: comment
+func deleteFromNonAutoConf(ctl *api.ClusterConfig) {
+	configAccess := getConfigAccess(DefaultPath)
+	config, _ := configAccess.GetStartingConfig() // TODO: figure out why there'd be an error
+	deleteClusterInfo(config, ctl)
+
+	// TODO: figure out what this is actually doing and if there's a better way to save the kubecongif
+	if err := clientcmd.ModifyConfig(configAccess, *config, true); err != nil {
+		logger.Debug("ignoring error while failing to update config file %q: %s", DefaultPath, err)
+	}
 }
