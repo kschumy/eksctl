@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
+	"os"
+	"strings"
 
 	"github.com/kubicorn/kubicorn/pkg/logger"
 
@@ -53,6 +53,42 @@ func deleteClusterCmd() *cobra.Command {
 	return cmd
 }
 
+// TODO: comment
+func deleteClusterAndResources(ctl *eks.ClusterProvider) {
+	// TODO: should I think of a better way to handle this?
+	var deletedResources []string
+	handleIfError := func(err error, name string) bool {
+		if err != nil {
+			logger.Debug("continue despite error: %v", err)
+			return true
+		}
+		logger.Debug("deleted %q", name)
+		deletedResources = append(deletedResources, name)
+		return false
+	}
+
+	stackManager := ctl.NewStackManager()
+
+	// TODO: is the handleIfError(...) thing super ugly? Would it be better to handle this with the
+	// more traditional 'if err := <method>; if err != nil { ... }' thing?
+	handleIfError(stackManager.WaitDeleteNodeGroup(), "node group")
+	if handleIfError(stackManager.DeleteCluster(), "cluster") {
+		if handleIfError(ctl.DeprecatedDeleteControlPlane(),"control plane") {
+			handleIfError(stackManager.DeprecatedDeleteStackControlPlane(), "stack control plane")
+		}
+	}
+	handleIfError(stackManager.DeprecatedDeleteStackServiceRole(), "node group")
+	handleIfError(stackManager.DeprecatedDeleteStackVPC(), "stack VPC")
+	handleIfError(stackManager.DeprecatedDeleteStackDefaultNodeGroup(), "default node group")
+
+	if len(deletedResources) == 0 {
+		logger.Warning("No EKS cluster resource were found for %q", ctl.Spec.ClusterName)
+	} else {
+		logger.Success("The following EKS cluster resource for %q will be deleted (if in doubt, check CloudFormation console): %q", ctl.Spec.ClusterName, strings.Join(deletedResources, ", "))
+	}
+}
+
+// TODO: comment
 func doDeleteCluster(cfg *api.ClusterConfig, name string) error {
 	ctl := eks.New(cfg)
 
@@ -72,47 +108,7 @@ func doDeleteCluster(cfg *api.ClusterConfig, name string) error {
 		return fmt.Errorf("--name must be set")
 	}
 
-	logger.Info("deleting EKS cluster %q", cfg.ClusterName)
-
-	handleError := func(err error) bool {
-		if err != nil {
-			logger.Debug("continue despite error: %v", err)
-			return true
-		}
-		return false
-	}
-
-	// We can remove all 'DeprecatedDelete*' calls in 0.2.0
-
-	stackManager := ctl.NewStackManager()
-
-	if err := stackManager.WaitDeleteNodeGroup(); err != nil {
-		handleError(err)
-	}
-
-	if err := stackManager.DeleteCluster(); err != nil {
-		if handleError(err) {
-			if err := ctl.DeprecatedDeleteControlPlane(); err != nil {
-				if handleError(err) {
-					if err := stackManager.DeprecatedDeleteStackControlPlane(); err != nil {
-						handleError(err)
-					}
-				}
-			}
-		}
-	}
-
-	if err := stackManager.DeprecatedDeleteStackServiceRole(); err != nil {
-		handleError(err)
-	}
-
-	if err := stackManager.DeprecatedDeleteStackVPC(); err != nil {
-		handleError(err)
-	}
-
-	if err := stackManager.DeprecatedDeleteStackDefaultNodeGroup(); err != nil {
-		handleError(err)
-	}
+	deleteClusterAndResources(ctl)
 
 	ctl.MaybeDeletePublicSSHKey()
 
@@ -122,3 +118,43 @@ func doDeleteCluster(cfg *api.ClusterConfig, name string) error {
 
 	return nil
 }
+
+// TODO: ask someone if closures are used a lot in Go.
+// AND DELETE ALL OF THIS!
+//
+//func _deleteClusterAndResources(ctl *eks.ClusterProvider ) []string {
+//
+//	deletedList, hasError := errorHandling()
+//
+//	stackManager := ctl.NewStackManager()
+//
+//	hasError(stackManager.WaitDeleteNodeGroup(), "node group")
+//
+//	if hasError(stackManager.DeleteCluster(), "cluster") {
+//		if hasError(ctl.DeprecatedDeleteControlPlane(), "control plane") {
+//			hasError(stackManager.DeprecatedDeleteStackControlPlane(), "stack control plane")
+//		}
+//	}
+//
+//	hasError(stackManager.DeprecatedDeleteStackServiceRole(), "stack service role")
+//	hasError(stackManager.DeprecatedDeleteStackVPC(), "stack VPC")
+//	hasError(stackManager.DeprecatedDeleteStackDefaultNodeGroup(), "default node group")
+//	return deletedList()
+//}
+//
+//func errorHandling() (func() []string, func(err error, resourceName string) bool) {
+//	var deletedResources []string
+//
+//	return func() []string {
+//		return deletedResources
+//	},
+//		func(err error, resourceName string) bool {
+//			logger.Info("this shit:", deletedResources)
+//			if err != nil {
+//				logger.Debug("continue despite error: %v", err)
+//				return true
+//			}
+//			deletedResources = append(deletedResources, resourceName)
+//			return false
+//		}
+//}
